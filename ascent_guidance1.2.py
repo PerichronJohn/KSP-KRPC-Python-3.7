@@ -1,31 +1,36 @@
+### I guess i should add comments###
+
 import krpc
 import time
 import math
 import RPi.GPIO as gp
 
+# Creates a link between KRPC and Atom, creates vessel specification variable, and sets reference frames
 conn = krpc.connect(name='Vessel Datalink')
 vessel = conn.space_center.active_vessel
 obt_frame = vessel.orbit.body.non_rotating_reference_frame
 srf_frame = vessel.orbit.body.reference_frame
-
+# Designates target orbital altitude, top of the gravity turn arc,and altitude the gravity turn begins
 target_altitude = 250000
-turn_end_altitude = 150000
+turn_end_altitude = 1400000
 turn_start_altitude = 1000
-
+fairing_sep_altitude = 60000
+#location of stage seperations, and designates fuel types
 stage1_location = 1
 stage2_location = -1
 srb_location = 3
 stage1_liquid_prop = "Kerosene"
 stage2_liquid_prop = "LqdHydrogen"
 solid_prop = "HTPB"
-
+# ends and starts phases of flight
+flight = False
 stage1_sep = False
 stage2_sep = False
 srb_sep = False
 fairing_sep = False
 periapsis_raise = False
 ascent = True
-
+# necessary variables for attitude control, and staging
 altitude = round(vessel.flight().surface_altitude, 2)
 srb_fuel = vessel.resources.amount(solid_prop)
 stage1_lf = round(vessel.resources_in_decouple_stage(stage1_location, cumulative = False).amount(stage1_liquid_prop))
@@ -39,9 +44,10 @@ time_to_apo = round(int(vessel.orbit.time_to_apoapsis), 2)
 target_heading = 90
 target_pitch = 90
 vert_pitch = 90
+# start auto_pilot with alignment to the upright position, in prep of launch
 vessel.auto_pilot.target_pitch_and_heading(target_pitch, target_heading)
 vessel.auto_pilot.engage()
-
+# GPIO pins for breadboard LED controls
 green = 17
 yellow = 27
 red = 22
@@ -49,7 +55,7 @@ yellow2 = 5
 blue = 24
 button1 = 23
 button2 = 21
-
+# Breadboard pin designations
 gp.setwarnings(False)
 gp.setmode(gp.BCM)
 gp.setup(green, gp.OUT)
@@ -57,9 +63,9 @@ gp.setup(yellow, gp.OUT)
 gp.setup(red, gp.OUT)
 gp.setup(yellow2, gp.OUT)
 gp.setup(blue, gp.OUT)
-gp.setup(button1, gp.OUT)
-gp.setup(button2, gp.OUT)
-
+gp.setup(button1, gp.IN)
+gp.setup(button2, gp.IN)
+# updates variables for guidance and stage sep
 def telemetry():
     global altitude
     global srb_fuel
@@ -86,7 +92,7 @@ def telemetry():
     time_to_apo = round(int(vessel.orbit.time_to_apoapsis), 2)
     vessel.auto_pilot.target_pitch_and_heading(target_pitch, target_heading)
     vessel.auto_pilot.engage()
-
+# Seperates Solid Rocket Booster stage when fuel is depleted
 class Stage_srb():
     def __init__(self, fuel):
 
@@ -99,7 +105,7 @@ class Stage_srb():
             print("[Solid Rocket Booster Seperation]")
             global srb_sep
             srb_sep = True
-
+# Seperates 1st stage when fuel is depleted
 class Stage1():
     def __init__(self, fuel):
 
@@ -117,7 +123,7 @@ class Stage1():
             vessel.control.activate_next_stage()
             global stage1_sep
             stage1_sep = True
-
+# Seperates 2nd stage when fuel is depleted
 class Stage2():
     def __init__(self, fuel):
 
@@ -130,26 +136,26 @@ class Stage2():
             print("[Stage 2 Seperation]")
             global stage2_sep
             stage2_sep = True
-
+# Deploys payload fairing at identified altittude
 class Stage_Fairing():
     def __init__(self,altitude):
 
         self.altitude = altitude
 
     def staging(self):
-        if self.altitude > 60000:
+        if self.altitude > fairing_sep_altitude:
             vessel.control.activate_next_stage()
             print("[Payload Fairing Seperation]")
             global fairing_sep
             fairing_sep = True
-
+# Circularizes orbit by maintaining "proper" time to apoapsis until periapsis altitude is appropriate
 class Periapsis_Raise:
 
     def __init__(self, altitude, periapsis_alt):
 
         self.altitude = altitude
-        self.periapsis_alt = periapsis_alt
-
+        swelf.periapsis_alt = periapsis_alt
+        
     def circularize():
         global target_altitude
         global time_to_apo
@@ -180,7 +186,7 @@ class Periapsis_Raise:
             vessel.control.throttle = 0
             global periapsis_raise
             periapsis_raise = True
-
+# guides rocket during gravity turn, and mainains time to apoapsis until apoapsis reaches target altitude
 def ascent_guidance():
     """Direct the rocket during ascent"""
     global target_pitch
@@ -221,119 +227,124 @@ def ascent_guidance():
         global ascent
         ascent = False
 
-startup = False
-startup_flash = 0
-if not startup:
-    if gp.input(botton1):
-        gp.output(green, True)
-        time.sleep(.1)
-        gp.output(green, False)
-        gp.output(yellow, True)
-        time.sleep(.1)
-        gp.output(yellow, False)
-        gp.output(red, True)
-        time.sleep(.1)
-        gp.output(red, False)
-        gp.output(yellow2, True)
-        time.sleep(.1)
-        gp.output(yellow2, False)
-        gp.output(blue, True)
-        time.sleep(.1)
-        gp.output(blue, False)
-    if not gp.input(botton1) and start_up =< 3:
-        gp.output(green, True)
-        gp.output(yellow, True)
-        gp.output(red, True)
-        gp.output(yellow2, True)
-        gp.output(blue, True)
-        time.sleep(.5)
-        gp.output(green, False)
-        gp.output(yellow, False)
-        gp.output(red, False)
-        gp.output(yellow2, False)
-        gp.output(blue, False)
-        time.sleep(.5)
-        startup_flash +=1
-    if startup_flash = 3:
-        startup = True
-        flight = True
-        print("[Flight Start-up]")
+# flashes LEDs on breadboard and starts initial launch sequence
+guidance_sequence_started = False
+try:
+    if not guidance_sequence_started:
+        if not gp.input(botton1):
+            gp.output(green, True)
+            time.sleep(.1)
+            gp.output(green, False)
+            gp.output(yellow, True)
+            time.sleep(.1)
+            gp.output(yellow, False)
+            gp.output(red, True)
+            time.sleep(.1)
+            gp.output(red, False)
+            gp.output(yellow2, True)
+            time.sleep(.1)
+            gp.output(yellow2, False)
+            gp.output(blue, True)
+            time.sleep(.1)
+            gp.output(blue, False)
+        if gp.input(botton1):
+            gp.output(green, True)
+            gp.output(yellow, True)
+            gp.output(red, True)
+            gp.output(yellow2, True)
+            gp.output(blue, True)
+            time.sleep(.5)
+            gp.output(green, False)
+            gp.output(yellow, False)
+            gp.output(red, False)
+            gp.output(yellow2, False)
+            gp.output(blue, False)
+            time.sleep(.5)
+            startup_flash +=1
+            startup = True
+            flight = True
+            print("[Flight Start-up]")
 
-if not gp.input(botton2):
+except KeyboardInterrupt:
     print("[Ending]")
     gp.cleanup()
-    break
 
-flight = False
+#launch "engine" i guess
 clock = -18
 mission_time = -17
-while flight:
+try:
+    while flight:
+        # time step for calculations and mission clock
+        time.sleep(.1)
+        clock += .1
+        clock_time = round(clock, 2)
+        mission_timer = clock_time.is_integer()
+        mission_time = int(round(clock))
+        # updates all variables
+        telemetry()
 
-    time.sleep(.1)
-    clock += .1
-    clock_time = round(clock, 2)
-    mission_timer = clock_time.is_integer()
-    mission_time = int(round(clock))
-
-    telemetry()
-
-    if ascent:
-        ascent_guidance()
-
-    stage1 = Stage1(stage1_lf)
-    stage2 = Stage2(stage2_lf)
-    solids = Stage_srb(srb_fuel)
-    fairing = Stage_Fairing(altitude)
-    p_raise = Periapsis_Raise(altitude, periapsis_alt)
-
-    if not srb_sep:
-        solids.staging()
-    if not stage1_sep:
-        stage1.staging()
-    if not stage2_sep:
-        stage2.staging()
-    if not fairing_sep:
-        fairing.staging()
-    if not periapsis_raise:
-        if altitude > target_altitude*.95:
-            Periapsis_Raise.circularize()
-    if abs(apoapsis_altitude - periapsis_alt) < 2000 and altitude > target_altitude*.9:
-        print("Target Orbit Achieved")
-        break
-
-    gp.output(blue, True)
-    if mission_timer:
-        print(mission_time)
-        gp.output(blue, False)
         if ascent:
-            print("ascent : Running")
-        if mission_time == -17:
-            print("[Flight Running]")
-            vessel.auto_pilot.target_pitch_and_heading(target_pitch, target_heading)
-            vessel.auto_pilot.engage()
-        if mission_time == -15:
-            print("[T",mission_time,"]")
-            current_throttle = 1
-        if mission_time == -3:
-            vessel.control.throttle = 1
-        if mission_time == -2:
-            vessel.control.activate_next_stage()
-            print("[Ignition]")
-        if mission_time == 0:
-            vessel.control.activate_next_stage()
-            print("[Liftoff]")
+            ascent_guidance()
+        
+        stage1 = Stage1(stage1_lf)
+        stage2 = Stage2(stage2_lf)
+        solids = Stage_srb(srb_fuel)
+        fairing = Stage_Fairing(altitude)
+        p_raise = Periapsis_Raise(altitude, periapsis_alt)
+
         if not srb_sep:
-            #print("solids.staging : Running")
-            print("srb_fuel: ", srb_fuel)
+            solids.staging()
         if not stage1_sep:
-            #print("stage1.staging : Running")
-            print("stage1_lf: ", stage1_lf)
+            stage1.staging()
         if not stage2_sep:
-            #print("stage2.staging : Running")
-            print("stage2_lf: ", stage2_lf)
+            stage2.staging()
         if not fairing_sep:
-            pass
-            #print("Fairing.staging : Running")
+            fairing.staging()
         if not periapsis_raise:
-            #print("P_raise.circularize : Running")
-            print("altitude: ", altitude)
+            if altitude > target_altitude*.95:
+                Periapsis_Raise.circularize()
+        if abs(apoapsis_altitude - periapsis_alt) < 5000 and altitude > target_altitude*.9:
+            print("Target Orbit Achieved")
+            break
+        #turn on flight indicator light
+        gp.output(blue, True)
+        # launch sequence, prints stage information.
+        if mission_timer:
+            print(mission_time)
+            gp.output(blue, False)
+            if ascent:
+                print("ascent : Running")
+            if mission_time == -17:
+                print("[Flight Running]")
+                vessel.auto_pilot.target_pitch_and_heading(target_pitch, target_heading)
+                vessel.auto_pilot.engage()
+            if mission_time == -15:
+                print("[T",mission_time,"]")
+                current_throttle = 1
+            if mission_time == -3:
+                vessel.control.throttle = 1
+            if mission_time == -2:
+                vessel.control.activate_next_stage()
+                print("[Ignition]")
+            if mission_time == 0:
+                vessel.control.activate_next_stage()
+                print("[Liftoff]")
+            if not srb_sep:
+                #print("solids.staging : Running")
+                print("srb_fuel: ", srb_fuel)
+            if not stage1_sep:
+                #print("stage1.staging : Running")
+                print("stage1_lf: ", stage1_lf)
+            if not stage2_sep:
+                #print("stage2.staging : Running")
+                print("stage2_lf: ", stage2_lf)
+            if not fairing_sep:
+                pass
+                #print("Fairing.staging : Running")
+            if not periapsis_raise:
+                #print("P_raise.circularize : Running")
+                print("altitude: ", altitude)
+#ends program, cleans GPIO leds                
+except KeyboardInterrupt:
+    print("[Ending]")
+    gp.cleanup()
